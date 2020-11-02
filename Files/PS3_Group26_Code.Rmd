@@ -1,0 +1,275 @@
+---
+title: "Prediction of 2020 US election using Logistic Regression & Poststratification "
+author: "Eung Kyu Kim, Dong Kyu Kim, Jiwon Chai"
+date: "November 2nd, 2020"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+indent: true   
+header-includes:
+  - \usepackage{indentfirst}
+---
+
+
+```{r setup, include=FALSE}
+library(tidyverse)
+
+
+# Loading in the cleaned survey Data
+survey_data <- read_csv("C:/Users/willi/Desktop/UT 20-21/STA304/Problem Set/PS3/working_directory/ps3_directory/survey_data.csv")
+
+# Loading in the cleaned census Data
+census_data <- read_csv("C:/Users/willi/Desktop/UT 20-21/STA304/Problem Set/PS3/working_directory/ps3_directory/census_data_post.csv")
+census_data2 <- read_csv("C:/Users/willi/Desktop/UT 20-21/STA304/Problem Set/PS3/working_directory/ps3_directory/census_data_post2.csv")
+```
+
+
+# Model
+
+  Our model focused on major factors that might affect the election vote 2020 in the USA. Logistic regression and post-stratification methods were used to predict the outcome of the 2020 American federal election. To begin with, from the survey data we have selected several variables. The chosen variables are age and state. And we have used a logistic function to determine the probability of winning the election. In addition, post-stratification methods were used with census data. Census data included all the ages. However, we have removed people who are under 19 from the data for accuracy. As a result, we could have determined the approval rating of two candidates and the potential winner of the election. 
+
+
+## Model Specifics
+
+  We will be using logistic regression for both Donald Trump and Joe Biden to model the relationship between the binary variables: ages / states and the dependent variable (vote for trump).  
+
+
+Figure 1, shows:
+$$log(\frac{p}{1-p}) = \beta_0+\beta_1  x_{age} + \beta_2 x_{AL} + ... + \beta_k x_{k} $$
+
+
+ 
+beta_0 represents the intercept of the model and is the log of the odds when the age is 0 regardless of the state. beta_1 represents the slope of the logistic model, one unit increase in age, we expect 0.0171 increase in the probability of voting for Donald Trump. Similarly from beta_2 to beta_k, it indicates the change in the probability of voting for Donald Trump at Ith state. 
+
+For the sake of simplicity, we have calculated a person who lives in Alabama with the age of 50 voting for Donald Trump.  
+$$log(\frac{p}{1-p}) = -0.692424 + (0.017153 * 50) - (0.260172 * 1) + (0.062354 *0 )+ ........ - (0.466067 * 0)$$
+After doing some math and isolating p, it gives that this person has a probability of 47.628% voting for Donald Trump. 
+
+ $$log(\frac{p}{1-p}) = -0.82937 - (0.006639 * 50) - (0.7647 * 1) + (0.259325 *0) + ........ - (0.318721 * 0)$$
+This gives us the value of p, which is 0.40212. This shows the probability of 40.212% voting for Biden. 
+As a result, in the state AL with age 50. Donald Trump has a higher approval rating. 
+
+
+
+
+```{r,include=FALSE}
+
+model_glm <- glm(vote_trump ~ age + as.factor(state) , 
+            data= survey_data, family= "binomial")
+summary(model_glm)
+
+```
+
+```{r, include=FALSE}
+model_glm2 <- glm(vote_biden ~ age + as.factor(state) , 
+            data= survey_data, family= "binomial")
+summary(model_glm2)
+```
+
+
+## Post-Stratification 
+
+  In the post-stratification analysis, our group has decided to calculate the y_ps value for each candidate: Donald Trump, Joe Biden. For finding the y_ps value, the cells were first created based on different ages greater than 18 because the voting age is greater than 18 in the US. Then, it was sub-divided by the state because the voting system in the US is determined by the number of won elections in each state. After finding that, the total number of the same division of cells was counted. Then, the estimate of the logarithmic odds was predicted. Since we know that the general logistic regression equation, the estimate was calculated by:
+$$ \frac{e^{logodds.estimate}} { (1 + e^{logodds.estimate})}$$
+  After finding the estimate values and population size of the jth cell, it can be plugged into the equation below to find the y_ps value.
+$$ \widehat{y}_{PS} = \frac{\sum N_j * \widehat{y}_j}{\sum N_j} $$
+  Then, the two values were compared to find which candidate is predicted to win in which state. After that, the number of won states was counted to find which candidate will be elected. 
+
+
+```{r, include=FALSE}
+
+census_data$logodds_estimate <-
+  model_glm %>%
+  predict(newdata = census_data)
+
+census_data$estimate <-
+  exp(census_data$logodds_estimate)/(1+exp(census_data$logodds_estimate))
+
+census_test <- census_data %>%
+  mutate(y_ps_prop = estimate*n) %>%
+  group_by(state) %>%
+  summarise(y_ps = sum(y_ps_prop)/sum(n)) %>%
+  rename(y_ps = y_ps)
+
+
+
+```
+
+
+
+
+```{r, include=FALSE}
+census_data2$logodds_estimate2 <-
+  model_glm2 %>%
+  predict(newdata = census_data2)
+
+census_data2$estimate2 <-
+  exp(census_data2$logodds_estimate2)/(1+exp(census_data2$logodds_estimate2))
+
+census_test2 <- census_data2 %>%
+  mutate(y_ps_prop2 = estimate2 * n) %>%
+  group_by(state) %>%
+  summarise(y_ps2 = sum(y_ps_prop2)/sum(n)) %>%
+  rename(y_ps2 = y_ps2)
+
+```
+
+
+```{r, include=FALSE}
+
+# Data Frame 1
+# comparing two values of prediction and showing who won in which state
+
+compare <- data.frame(census_test$state, as.numeric(census_test$y_ps), 
+                      as.numeric(census_test2$y_ps2))
+
+compare <- compare %>%
+  rename(trump_predicted = as.numeric.census_test.y_ps.) %>%
+  rename(biden_predicted = as.numeric.census_test2.y_ps2.) %>%
+  mutate(who_will_win = ifelse(trump_predicted > biden_predicted, "Trump", "Biden"))
+
+result <- compare %>%
+  group_by( who_will_win ) %>%
+  summarise(x1 = sum(who_will_win == "Trump"),
+            x2 = sum(who_will_win == "Biden"))
+
+
+```
+
+
+# Results
+
+  In logistic regression, the positive value of age estimate indicates the older you are the higher probability of voting for Donald Trump. In Figure 1, the age estimate with a positive value of 0.171 indicates older people have a higher probability of voting for Donald Trump. On the other hand, the negative age estimate value with -0.006 shown in figure 2, indicates younger people will likely vote for Joe Biden. 
+
+  Furthermore, for post-stratification, the calculated Y^ps values for each state are shown in figure 6. Trump_predicted represents the probability of voting for Trump  and Biden_predicted presents the probability of voting for Biden. The person with a higher value gets points for each state. The result of each state is also shown in figure 6. As a result, among 50 states, Biden gets 24 states’ votes compared to Trump with 26 states according to figure 7. Since the US election depends on who gets more state votes,  we can anticipate that Donald Trump has a higher probability of winning the election. 
+
+
+
+
+# Discussion
+
+  Our goal was to predict the winner of the 2020 US presidential election. We used two data sets: survey data is from IPUMS and census data is from Voter Study Group. We obtained this data and went through a data cleaning process. We filtered variables so we only work with useful data. We used two variables, ‘State’ and ‘age’. We picked the ‘State’ variable because the state is one of the most important variables in the US election system, and we picked the ‘age’ variable because certain age groups tend to support specific leaders. We created two logistic regression models, one for vote_trump and one for vote_biden. After doing so, we used the summary() function to get all the estimates. Then we calculated each State’s probability of voting Trump and voting Biden using a post stratification method. We used census data for this. We then compared each result to come up with the final winner.
+  
+  After going through logistic regression, we got a positive estimate(0.0171) for the ‘age’ variable in the vote_trump model and a negative estimate(-0.0066) for ‘age’ variable in the vote_biden model which implies that the older you are, the more one will support Trump and the younger you are, the more one will support Biden. After going through the post-stratification calculation, we could compare the winning states between two candidates Trump and Biden. According to the ‘compare’ data in the appendix, Trump wins in 26 states while Biden wins in 24 states. Since the candidate who gets more states will win the election, according to our model and calculations, Trump will win the 2020 US presidential election.
+  
+  The data we are using could be somehow biased. The data we are using(survey data and census data) are not representing the total population, they are only representing the sample population. Also, while most of the age groups have more than 30,000 population size, as age past 80, the sample size is smaller than the average which is less representative. Therefore the age group representation could be biased. 
+
+
+## Weaknesses
+
+  Our biggest weakness was that we only used two predictors which are ‘age’ and ‘state’. There are many other predictors that could possibly affect one’s choice of which candidate to support such as ideology, gender, and race. However, we did not consider those predictors because we wanted our prediction to be based on the age and the previous vote result in order to make our prediction as clear as possible. Therefore, our prediction could be not accurate enough in real-life situations. 
+  The other weakness is that our error range is not clear. Since we only used a few variables, the prediction is not accurate enough to be applied to the real world prediction. Therefore, our error range is not accurate and this unclearness brings difficulties when predicting the result in competitive states.
+
+
+
+## Next Steps
+
+  We will first look at the actual election result to evaluate our prediction and figure out how to improve our prediction for the next election. If our prediction is wrong, we will have to include many more various variables such as gender, ideology, education, and income to get a more accurate prediction that could be applied to real-world situations. 
+	Then we will look at the specific data from the actual 2020 US election to know what variables are most useful for the election prediction. We will create multiple different models with different variables and see which model had the closest prediction with the actual result so we can use it for the next prediction.
+
+
+
+# References
+
+IPUMS USA. (2020). U.S. CENSUS DATA FOR SOCIAL, ECONOMIC, AND HEALTH RESEARCH. IPUMS USA. https://usa.ipums.org/usa/index.shtml. 
+
+Voter Study Group. (2020, September). Nationscape Data Set. https://www.voterstudygroup.org/publication/nationscape-data-set. 
+
+
+# Appendix
+
+
+## Figure 1
+```{r}
+# Model Number 1
+
+model_glm <- glm(vote_trump ~ age + as.factor(state) , 
+            data= survey_data, family= "binomial")
+summary(model_glm)
+
+```
+
+## Figure 2
+```{r}
+# Model Number 2
+
+model_glm2 <- glm(vote_biden ~ age + as.factor(state) , 
+            data= survey_data, family= "binomial")
+summary(model_glm2)
+```
+
+## Figure 3
+```{r}
+# Data Frame 1
+# comparing two values of prediction and showing who won in which state
+
+compare <- data.frame(census_test$state, as.numeric(census_test$y_ps), 
+                      as.numeric(census_test2$y_ps2))
+
+compare <- compare %>%
+  rename(trump_predicted = as.numeric.census_test.y_ps.) %>%
+  rename(biden_predicted = as.numeric.census_test2.y_ps2.) %>%
+  mutate(who_will_win = ifelse(trump_predicted > biden_predicted, "Trump", "Biden"))
+
+result <- compare %>%
+  group_by( who_will_win ) %>%
+  summarise(Republican = sum(who_will_win == "Trump"),
+            Democratic = sum(who_will_win == "Biden"))
+
+
+
+```
+
+
+## Figure 4
+```{r}
+#Calculating the yps values for each state for Trump
+
+census_data$logodds_estimate <-
+  model_glm %>%
+  predict(newdata = census_data)
+
+census_data$estimate <-
+  exp(census_data$logodds_estimate)/(1+exp(census_data$logodds_estimate))
+
+census_test <- census_data %>%
+  mutate(y_ps_prop = estimate*n) %>%
+  group_by(state) %>%
+  summarise(y_ps = sum(y_ps_prop)/sum(n)) %>%
+  rename(y_ps = y_ps)
+
+
+
+```
+
+## Figure 5
+```{r}
+#Calculating the y_ps values for Biden
+
+census_data2$logodds_estimate2 <-
+  model_glm2 %>%
+  predict(newdata = census_data2)
+
+census_data2$estimate2 <-
+  exp(census_data2$logodds_estimate2)/(1+exp(census_data2$logodds_estimate2))
+
+census_test2 <- census_data2 %>%
+  mutate(y_ps_prop2 = estimate2 * n) %>%
+  group_by(state) %>%
+  summarise(y_ps2 = sum(y_ps_prop2)/sum(n)) %>%
+  rename(y_ps2 = y_ps2)
+
+```
+
+## Figure 6
+```{r}
+#Table of predicting which candidate will win in which state by comparing y_ps values
+as_tibble(compare)
+```
+
+## Figure 7
+```{r}
+#Table of which candidate is predicted to be elected
+as_tibble(result)
+```
